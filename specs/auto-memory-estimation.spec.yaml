@@ -1,0 +1,40 @@
+apiVersion: openspec.io/v1alpha1
+kind: FeatureSpecification
+metadata:
+  name: openclaw-auto-memory-estimation
+  description: 自动内存估算功能，为OpenClaw Node.js进程自动计算最优内存上限
+  version: 1.0.0
+  author: cncabf00
+  labels:
+    category: self-preservation
+    component: install-script
+spec:
+  feature:
+    name: 自动内存估算
+    description: |
+      探测当前设备总内存大小，自动计算Node.js内存上限：
+      1. 最低保障2GB内存
+      2. 系统内存>4GB时使用总内存的70%
+      3. 最大上限16GB，避免过度占用内存
+    backwardCompatible: true
+    rollbackSupported: true
+  implementation:
+    location: install.sh
+    changes:
+      - 添加calculate_memory_limit函数，实现内存探测和计算逻辑
+      - 修改日志函数，将日志输出到stderr避免干扰变量捕获
+      - 启动PM2服务时注入NODE_OPTIONS环境变量设置--max-old-space-size
+      - 添加bc依赖安装，用于浮点计算，无bc时自动降级为整数计算
+  testCases:
+    - name: 小内存设备(<4GB)
+      expected: 内存上限设置为2GB
+    - name: 中等内存设备(4GB-16GB)
+      expected: 内存上限设置为总内存的70%
+    - name: 大内存设备(>16GB)
+      expected: 内存上限设置为16GB
+    - name: 无bc环境
+      expected: 自动使用整数计算，功能正常
+    - name: 无法探测内存
+      expected: 回退到默认2GB上限
+  rollbackProcedure:
+    - 执行./install.sh rollback即可完全恢复到安装前状态

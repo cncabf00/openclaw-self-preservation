@@ -13,7 +13,7 @@ LOG_FILE="/var/log/openclaw-self-preservation-install.log"
 
 # 日志函数
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE" >&2
 }
 
 # 安全检查
@@ -58,6 +58,19 @@ install_dependencies() {
     else
         log "✅ PM2 已存在，版本：$(pm2 -v)"
     fi
+    
+    # 检查 bc 是否安装（用于内存计算）
+    if ! command -v bc &> /dev/null; then
+        log "bc 未安装，开始安装 bc..."
+        if command -v apt-get &> /dev/null; then
+            apt-get update && apt-get install -y bc
+        elif command -v yum &> /dev/null; then
+            yum install -y bc
+        else
+            log "⚠️ 无法自动安装bc，将使用纯整数计算内存上限"
+        fi
+        log "✅ bc 安装完成"
+    fi
 }
 
 # 备份现有配置
@@ -77,9 +90,56 @@ backup_existing() {
     fi
 }
 
+# 自动计算内存上限
+calculate_memory_limit() {
+    log "=== 自动计算Node.js内存上限 ==="
+    
+    # 探测系统总内存（单位：MB）
+    local total_mem_mb
+    if command -v free &> /dev/null; then
+        total_mem_mb=$(free -m | awk '/^Mem:/{print $2}')
+    elif [ -f /proc/meminfo ]; then
+        total_mem_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
+    else
+        log "⚠️ 无法探测系统内存，使用默认2GB内存上限"
+        echo 2048
+        return
+    fi
+    
+    if [ -z "$total_mem_mb" ] || [ "$total_mem_mb" -lt 1024 ]; then
+        log "⚠️ 系统内存小于1GB，使用最小2GB内存上限"
+        echo 2048
+        return
+    fi
+    
+    # 计算内存上限：至少2GB，系统内存>4GB时使用70%，最大16GB
+    local mem_limit_mb
+    if [ "$total_mem_mb" -lt 4096 ]; then
+        mem_limit_mb=2048
+    else
+        # 优先使用bc计算，否则用纯整数计算（近似70%）
+        if command -v bc &> /dev/null; then
+            mem_limit_mb=$(echo "$total_mem_mb * 0.7" | bc | awk '{print int($1)}')
+        else
+            # 纯整数计算：*7/10 ≈ 70%
+            mem_limit_mb=$(( total_mem_mb * 7 / 10 ))
+        fi
+        # 最大不超过16GB
+        if [ "$mem_limit_mb" -gt 16384 ]; then
+            mem_limit_mb=16384
+        fi
+    fi
+    
+    log "✅ 系统总内存：$((total_mem_mb / 1024))GB，Node.js内存上限设置为：$((mem_limit_mb / 1024))GB"
+    echo "$mem_limit_mb"
+}
+
 # 安装防护服务
 install_service() {
     log "=== 安装自崩溃防护服务 ==="
+    
+    # 计算内存上限
+    local mem_limit=$(calculate_memory_limit)
     
     # 停止现有同名进程（如果存在）
     if pm2 status | grep -q "$PM2_CONF_NAME"; then
@@ -87,9 +147,9 @@ install_service() {
         pm2 delete "$PM2_CONF_NAME" > /dev/null 2>&1
     fi
     
-    # 启动 OpenClaw gateway 服务通过 PM2
-    log "启动 OpenClaw gateway 服务..."
-    pm2 start "$OPENCLAW_BIN" --name "$PM2_CONF_NAME" --cwd "$OPENCLAW_WORKDIR" -- gateway start
+    # 启动 OpenClaw gateway 服务通过 PM2，设置内存上限
+    log "启动 OpenClaw gateway 服务，内存上限：$((mem_limit / 1024))GB..."
+    NODE_OPTIONS="--max-old-space-size=$mem_limit" pm2 start "$OPENCLAW_BIN" --name "$PM2_CONF_NAME" --cwd "$OPENCLAW_WORKDIR" -- gateway start
     
     # 保存 PM2 配置
     pm2 save
