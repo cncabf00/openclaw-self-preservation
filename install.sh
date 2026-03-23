@@ -5,7 +5,8 @@ set -euo pipefail
 # 安全规范：所有修改可回滚，无破坏性操作
 
 # 配置变量
-OPENCLAW_DIR="/root/.openclaw"
+OPENCLAW_BIN="/usr/bin/openclaw"
+OPENCLAW_WORKDIR="/root/.openclaw"
 PM2_CONF_NAME="openclaw-gateway"
 BACKUP_DIR="/root/.openclaw/backup/self-preservation-$(date +%Y%m%d%H%M%S)"
 LOG_FILE="/var/log/openclaw-self-preservation-install.log"
@@ -26,7 +27,7 @@ security_check() {
     fi
     
     # 检查 OpenClaw 可执行文件是否存在
-    if [ ! -f "$OPENCLAW_DIR/bin/openclaw" ]; then
+    if [ ! -f "$OPENCLAW_BIN" ]; then
         log "错误：OpenClaw 可执行文件不存在，安装路径可能不正确"
         exit 1
     fi
@@ -88,7 +89,7 @@ install_service() {
     
     # 启动 OpenClaw gateway 服务通过 PM2
     log "启动 OpenClaw gateway 服务..."
-    pm2 start "$OPENCLAW_DIR/bin/openclaw" --name "$PM2_CONF_NAME" -- gateway start
+    pm2 start "$OPENCLAW_BIN" --name "$PM2_CONF_NAME" --cwd "$OPENCLAW_WORKDIR" -- gateway start
     
     # 保存 PM2 配置
     pm2 save
