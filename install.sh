@@ -21,8 +21,8 @@ security_check() {
     log "=== 开始安全检查 ==="
     
     # 检查 OpenClaw 目录是否存在
-    if [ ! -d "$OPENCLAW_DIR" ]; then
-        log "错误：OpenClaw 目录 $OPENCLAW_DIR 不存在，请先安装 OpenClaw"
+    if [ ! -d "$OPENCLAW_WORKDIR" ]; then
+        log "错误：OpenClaw 工作目录 $OPENCLAW_WORKDIR 不存在，请先安装 OpenClaw"
         exit 1
     fi
     
