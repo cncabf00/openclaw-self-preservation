@@ -83,7 +83,8 @@ backup_existing() {
     # 备份现有的 PM2 openclaw-gateway 配置（如果存在）
     if pm2 status | grep -q "$PM2_CONF_NAME"; then
         log "检测到现有 $PM2_CONF_NAME 进程，正在备份配置..."
-        pm2 save "$BACKUP_DIR/pm2-backup.json"
+        pm2 save > /dev/null 2>&1
+        cp /root/.pm2/dump.pm2 "$BACKUP_DIR/pm2-backup.json"
         log "✅ 现有配置已备份到 $BACKUP_DIR"
     else
         log "无现有 $PM2_CONF_NAME 进程，无需备份"
